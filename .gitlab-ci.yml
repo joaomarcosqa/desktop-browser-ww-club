@@ -1,0 +1,68 @@
+image: docker:latest
+
+stages:
+  - build
+  - test
+
+cache:
+  key: composer
+  paths:
+    - /tmp/composer/cache
+    - .pip_cache
+
+variables:
+  CONTAINER_NAME: 450773497527.dkr.ecr.sa-east-1.amazonaws.com/automated-test/club
+  CONTAINER_NAME_BUILD: automated-test-club-$CI_JOB_ID
+  CONTAINER_BUILD_IMAGE: $CONTAINER_NAME:$CI_COMMIT_SHA
+  CONTAINER_TAG: $CI_COMMIT_REF_NAME-$CI_COMMIT_SHA
+  VERSION: latest
+
+before_script:
+  - apk add --update --no-cache build-base python3-dev libffi-dev libressl-dev musl-dev openssh-client bash python3 git gettext curl gcc musl-dev openssl-dev cargo make
+  - curl -O https://bootstrap.pypa.io/get-pip.py
+  - apk add --no-cache make
+  - python3 get-pip.py
+  - apk add gcc musl-dev python3-dev libffi-dev openssl-dev cargo
+  - pip3 install --cache-dir .pip_cache --upgrade awsebcli awscli ec2instanceconnectcli botocore==1.19.63
+  - export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+  - export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+  - $(aws ecr get-login --no-include-email --region $AWS_REGION | tr -d '\r')
+
+
+build-image:
+  when: manual
+  stage: build
+  script:
+    - docker rm -f ${CONTAINER_NAME_BUILD}
+    - docker build -t ${CONTAINER_BUILD_IMAGE} .
+    - docker run -d --name ${CONTAINER_NAME_BUILD} -v /tmp/composer/cache:/root/.composer/cache ${CONTAINER_BUILD_IMAGE}
+    - docker tag ${CONTAINER_BUILD_IMAGE} ${CONTAINER_NAME}:${CONTAINER_TAG}
+    - docker push ${CONTAINER_NAME}:${CONTAINER_TAG}
+  after_script:
+    - docker stop ${CONTAINER_NAME_BUILD}
+    - docker rm ${CONTAINER_NAME_BUILD}
+  tags:
+    - runner-crm
+
+execute-test:
+  when: manual
+  stage: test
+  before_script:
+  - apk add --update --no-cache build-base python3-dev libffi-dev libressl-dev musl-dev openssh-client bash python3 git gettext curl gcc musl-dev openssl-dev cargo make
+  - curl -O https://bootstrap.pypa.io/get-pip.py
+  - apk add --no-cache make
+  - python3 get-pip.py
+  - apk add gcc musl-dev python3-dev libffi-dev openssl-dev cargo
+  - pip3 install --cache-dir .pip_cache --upgrade awsebcli awscli ec2instanceconnectcli botocore==1.19.63
+  - export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+  - export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+  - $(aws ecr get-login --no-include-email --region $AWS_REGION | tr -d '\r')
+  script:
+    # Prepare container (Workdir, Environment file, etc)
+    - docker pull ${CONTAINER_NAME}:${VERSION}
+    - docker run --privileged --env AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID --env AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY --env ENVIROMENT=$ENVIROMENT --env SLACK_WEBHOOK=$SLACK_WEBHOOK --env BUCKET_NAME=$BUCKET_NAME  --name ${CONTAINER_NAME_BUILD} ${CONTAINER_NAME}
+  after_script:
+    - docker rm ${CONTAINER_NAME_BUILD}
+    - docker rmi ${CONTAINER_NAME} 2> /dev/null
+  tags:
+    - runner-crm

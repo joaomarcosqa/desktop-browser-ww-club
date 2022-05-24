@@ -1,0 +1,4 @@
+ENVIROMENT=development
+BASE_URL=https://alice-stage-br-aws.wwbr.com.br/
+
+SLACK_WEBHOOK=https://hooks.slack.com/services/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
